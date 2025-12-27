@@ -120,7 +120,8 @@ app.get('/api/health', async (req, res) => {
 app.get('/api/test-db', async (req, res) => {
     try {
         const pool = (await import('./config/database.js')).default;
-        const [result] = await pool.execute('SELECT 1 as test, DATABASE() as db_name, USER() as db_user, NOW() as current_time');
+        // MariaDB uyumlu sorgu - NOW() yerine CURRENT_TIMESTAMP kullan
+        const [result] = await pool.execute('SELECT 1 as test, DATABASE() as db_name, USER() as db_user, CURRENT_TIMESTAMP as db_time');
         
         res.json({ 
             status: 'OK',
@@ -128,7 +129,7 @@ app.get('/api/test-db', async (req, res) => {
                 connected: true,
                 name: result[0].db_name,
                 user: result[0].db_user,
-                time: result[0].current_time
+                time: result[0].db_time
             },
             config: {
                 host: process.env.DB_HOST || 'not set',
