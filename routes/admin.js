@@ -1268,12 +1268,49 @@ router.delete('/projects/:id', async (req, res) => {
             return res.status(404).json({ error: 'Proje bulunamadı' });
         }
 
-        // Projeyi sil (CASCADE ile ilişkili kayıtlar da silinecek)
+        // İlişkili kayıtları önce sil (CASCADE yoksa)
+        try {
+            // Project images
+            await pool.execute('DELETE FROM project_images WHERE project_id = ?', [id]);
+            // Project tags
+            await pool.execute('DELETE FROM project_tags WHERE project_id = ?', [id]);
+            // Reviews
+            await pool.execute('DELETE FROM reviews WHERE project_id = ?', [id]);
+            // Donations
+            await pool.execute('DELETE FROM donations WHERE project_id = ?', [id]);
+            // Favorites
+            await pool.execute('DELETE FROM favorites WHERE project_id = ?', [id]);
+            // Content translations
+            await pool.execute('DELETE FROM content_translations WHERE content_id = ? AND content_type = ?', [id, 'project']);
+            // Order items (eğer sipariş varsa, sadece proje referansını kaldır)
+            await pool.execute('UPDATE order_items SET project_id = NULL WHERE project_id = ?', [id]);
+        } catch (relError) {
+            console.warn('Error deleting related records (continuing):', relError.message);
+            // Devam et, ana projeyi silmeye çalış
+        }
+
+        // Projeyi sil
         await pool.execute('DELETE FROM projects WHERE id = ?', [id]);
+        
         res.json({ message: 'Proje silindi' });
     } catch (error) {
         console.error('Delete project error:', error);
-        res.status(500).json({ error: 'Sunucu hatası' });
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        console.error('Error sqlState:', error.sqlState);
+        
+        // Foreign key constraint hatası
+        if (error.code === 'ER_ROW_IS_REFERENCED_2' || error.code === 'ER_ROW_IS_REFERENCED' || error.sqlState === '23000') {
+            return res.status(400).json({ 
+                error: 'Proje silinemiyor',
+                details: 'Bu proje başka kayıtlarla ilişkili (sipariş, yorum vb.). Önce ilişkili kayıtları silin.'
+            });
+        }
+        
+        res.status(500).json({ 
+            error: 'Sunucu hatası',
+            details: process.env.NODE_ENV === 'development' ? error.message : 'Proje silinirken bir hata oluştu'
+        });
     }
 });
 
