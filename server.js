@@ -35,55 +35,72 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// CORS Configuration
+// CORS Configuration - Basitleştirilmiş ve daha güvenilir
+const allowedOrigins = process.env.CORS_ORIGIN 
+    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+    : [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'https://www.hpdemos.de',
+        'https://hpdemos.de'
+    ];
+
 const corsOptions = {
     origin: function (origin, callback) {
-        // Environment variable'dan izin verilen origin'leri al
-        const allowedOrigins = process.env.CORS_ORIGIN 
-            ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-            : [
-                'http://localhost:3000',
-                'http://localhost:5173',
-                'https://www.hpdemos.de',
-                'https://hpdemos.de'
-            ];
-        
-        // Debug için log
-        console.log('CORS check - Origin:', origin);
-        console.log('CORS check - Allowed origins:', allowedOrigins);
-        console.log('CORS check - CORS_ORIGIN env:', process.env.CORS_ORIGIN);
-        
-        // Origin yoksa (Postman, curl gibi direkt API çağrıları) izin ver
+        // Origin yoksa (Postman, curl, server-to-server) izin ver
         if (!origin) {
-            console.log('CORS: No origin, allowing');
             return callback(null, true);
         }
         
         // İzin verilen listede ise
         if (allowedOrigins.includes(origin)) {
-            console.log('CORS: Origin allowed');
             return callback(null, true);
         }
         
-        // Eğer origin'in www'siz veya www'li versiyonu listede varsa izin ver
-        const originWithoutWww = origin.replace('www.', '');
-        const originWithWww = origin.startsWith('https://') ? origin.replace('https://', 'https://www.') : origin;
+        // www'siz veya www'li versiyon kontrolü
+        const originWithoutWww = origin.replace(/^https?:\/\/(www\.)?/, (match, www) => {
+            return match.replace('www.', '');
+        });
+        const originWithWww = origin.replace(/^https?:\/\//, 'https://www.');
         
-        if (allowedOrigins.includes(originWithoutWww) || allowedOrigins.includes(originWithWww)) {
-            console.log('CORS: Origin variant allowed');
+        if (allowedOrigins.some(allowed => {
+            const allowedWithoutWww = allowed.replace(/^https?:\/\/(www\.)?/, (match) => {
+                return match.replace('www.', '');
+            });
+            return originWithoutWww.includes(allowedWithoutWww) || originWithWww.includes(allowed);
+        })) {
             return callback(null, true);
         }
         
-        console.log('CORS: Origin denied');
+        // Tüm origin'lere izin ver (güvenlik riski var ama çalışması için)
+        // Production'da kaldırılmalı
+        if (process.env.NODE_ENV !== 'production') {
+            return callback(null, true);
+        }
+        
         callback(new Error('CORS policy violation'));
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    optionsSuccessStatus: 200
 };
 
-// Middleware
+// CORS middleware - TÜM isteklerden önce
 app.use(cors(corsOptions));
+
+// Hata durumlarında da CORS header'larını gönder
+app.use((err, req, res, next) => {
+    // CORS header'larını ekle
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.some(allowed => origin.includes(allowed.replace(/^https?:\/\/(www\.)?/, '')))) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+    }
+    
+    next(err);
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
