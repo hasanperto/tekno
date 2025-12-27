@@ -7,6 +7,17 @@ const router = express.Router();
 // Tüm projeleri getir
 router.get('/', async (req, res) => {
     try {
+        // Veritabanı bağlantısını test et
+        try {
+            await pool.execute('SELECT 1');
+        } catch (dbError) {
+            console.error('Database connection error:', dbError);
+            return res.status(500).json({ 
+                error: 'Veritabanı bağlantı hatası',
+                details: process.env.NODE_ENV === 'development' ? dbError.message : 'MySQL bağlantısı kurulamadı'
+            });
+        }
+
         const { category, search, page = 1, limit = 20, lang = 'tr' } = req.query;
         const offset = (page - 1) * limit;
 
@@ -108,7 +119,32 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('Get projects error:', error);
-        res.status(500).json({ error: 'Sunucu hatası' });
+        console.error('Error message:', error.message);
+        console.error('Error code:', error.code);
+        console.error('Error stack:', error.stack);
+        
+        // MySQL bağlantı hatası kontrolü
+        if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
+            return res.status(500).json({ 
+                error: 'Veritabanı bağlantı hatası',
+                details: 'MySQL sunucusuna bağlanılamıyor. Lütfen DB_HOST, DB_USER, DB_PASSWORD ve DB_NAME değerlerini kontrol edin.',
+                code: error.code
+            });
+        }
+        
+        if (error.code === 'ER_ACCESS_DENIED_ERROR' || error.code === 'ER_BAD_DB_ERROR') {
+            return res.status(500).json({ 
+                error: 'Veritabanı erişim hatası',
+                details: 'MySQL kullanıcı adı, şifre veya veritabanı adı hatalı.',
+                code: error.code
+            });
+        }
+        
+        res.status(500).json({ 
+            error: 'Sunucu hatası',
+            details: process.env.NODE_ENV === 'development' ? error.message : 'Bilinmeyen bir hata oluştu',
+            code: error.code || 'UNKNOWN'
+        });
     }
 });
 

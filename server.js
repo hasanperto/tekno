@@ -92,8 +92,66 @@ app.use('/api/public/settings', publicSettingsRoutes);
 app.use('/api/pages', pagesRoutes);
 
 // Health check
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', message: 'TeknoProje API is running' });
+app.get('/api/health', async (req, res) => {
+    try {
+        // Veritabanı bağlantısını test et
+        const pool = (await import('./config/database.js')).default;
+        await pool.execute('SELECT 1');
+        
+        res.json({ 
+            status: 'OK', 
+            message: 'TeknoProje API is running',
+            database: 'connected',
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Health check database error:', error);
+        res.status(500).json({ 
+            status: 'ERROR', 
+            message: 'API çalışıyor ancak veritabanı bağlantısı yok',
+            database: 'disconnected',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Database connection failed',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Database test endpoint
+app.get('/api/test-db', async (req, res) => {
+    try {
+        const pool = (await import('./config/database.js')).default;
+        const [result] = await pool.execute('SELECT 1 as test, DATABASE() as db_name, USER() as db_user, NOW() as current_time');
+        
+        res.json({ 
+            status: 'OK',
+            database: {
+                connected: true,
+                name: result[0].db_name,
+                user: result[0].db_user,
+                time: result[0].current_time
+            },
+            config: {
+                host: process.env.DB_HOST || 'not set',
+                user: process.env.DB_USER || 'not set',
+                database: process.env.DB_NAME || 'not set',
+                // Şifreyi gösterme
+                password: process.env.DB_PASSWORD ? '***set***' : 'not set'
+            }
+        });
+    } catch (error) {
+        console.error('Database test error:', error);
+        res.status(500).json({ 
+            status: 'ERROR',
+            error: error.message,
+            code: error.code,
+            config: {
+                host: process.env.DB_HOST || 'not set',
+                user: process.env.DB_USER || 'not set',
+                database: process.env.DB_NAME || 'not set',
+                password: process.env.DB_PASSWORD ? '***set***' : 'not set'
+            }
+        });
+    }
 });
 
 app.listen(PORT, () => {
