@@ -1270,6 +1270,21 @@ router.delete('/projects/:id', async (req, res) => {
 
         // İlişkili kayıtları önce sil (CASCADE yoksa)
         try {
+            // RESTRICT olan tabloları önce kontrol et ve NULL yap
+            // Order items (RESTRICT - sipariş kayıtlarını korumak için NULL yap)
+            await pool.execute('UPDATE order_items SET project_id = NULL WHERE project_id = ?', [id]);
+            
+            // Sales orders (RESTRICT - sipariş kayıtlarını korumak için NULL yap)
+            await pool.execute('UPDATE sales_orders SET product_id = NULL WHERE product_id = ?', [id]);
+            
+            // Quote requests (varsa)
+            try {
+                await pool.execute('DELETE FROM quote_requests WHERE project_id = ?', [id]);
+            } catch (e) {
+                console.warn('quote_requests table may not exist:', e.message);
+            }
+            
+            // CASCADE olan tablolar (otomatik silinecek ama manuel de silebiliriz)
             // Project images
             await pool.execute('DELETE FROM project_images WHERE project_id = ?', [id]);
             // Project tags
@@ -1278,12 +1293,40 @@ router.delete('/projects/:id', async (req, res) => {
             await pool.execute('DELETE FROM reviews WHERE project_id = ?', [id]);
             // Donations
             await pool.execute('DELETE FROM donations WHERE project_id = ?', [id]);
+            // Project donations (eğer ayrı tablo varsa)
+            try {
+                await pool.execute('DELETE FROM project_donations WHERE project_id = ?', [id]);
+            } catch (e) {
+                console.warn('project_donations table may not exist:', e.message);
+            }
             // Favorites
             await pool.execute('DELETE FROM favorites WHERE project_id = ?', [id]);
+            // Downloads
+            try {
+                await pool.execute('DELETE FROM downloads WHERE project_id = ?', [id]);
+            } catch (e) {
+                console.warn('downloads table may not exist:', e.message);
+            }
+            // User accesses
+            try {
+                await pool.execute('DELETE FROM user_accesses WHERE product_id = ?', [id]);
+            } catch (e) {
+                console.warn('user_accesses table may not exist:', e.message);
+            }
+            // Product packages
+            try {
+                await pool.execute('DELETE FROM product_packages WHERE product_id = ?', [id]);
+            } catch (e) {
+                console.warn('product_packages table may not exist:', e.message);
+            }
             // Content translations
             await pool.execute('DELETE FROM content_translations WHERE content_id = ? AND content_type = ?', [id, 'project']);
-            // Order items (eğer sipariş varsa, sadece proje referansını kaldır)
-            await pool.execute('UPDATE order_items SET project_id = NULL WHERE project_id = ?', [id]);
+            // Project files
+            try {
+                await pool.execute('DELETE FROM project_files WHERE project_id = ?', [id]);
+            } catch (e) {
+                console.warn('project_files table may not exist:', e.message);
+            }
         } catch (relError) {
             console.warn('Error deleting related records (continuing):', relError.message);
             // Devam et, ana projeyi silmeye çalış
