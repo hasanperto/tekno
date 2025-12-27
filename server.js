@@ -35,8 +35,31 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// CORS Configuration
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Environment variable'dan izin verilen origin'leri al
+        const allowedOrigins = process.env.CORS_ORIGIN 
+            ? process.env.CORS_ORIGIN.split(',')
+            : [
+                'http://localhost:3000',
+                'http://localhost:5173',
+                'https://www.hpdemos.de',
+                'https://hpdemos.de'
+            ];
+        
+        // Origin yoksa (Postman, curl gibi) veya izin verilen listede ise
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('CORS policy violation'));
+        }
+    },
+    credentials: true
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
