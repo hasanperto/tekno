@@ -40,7 +40,7 @@ const corsOptions = {
     origin: function (origin, callback) {
         // Environment variable'dan izin verilen origin'leri al
         const allowedOrigins = process.env.CORS_ORIGIN 
-            ? process.env.CORS_ORIGIN.split(',')
+            ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
             : [
                 'http://localhost:3000',
                 'http://localhost:5173',
@@ -48,14 +48,38 @@ const corsOptions = {
                 'https://hpdemos.de'
             ];
         
-        // Origin yoksa (Postman, curl gibi) veya izin verilen listede ise
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('CORS policy violation'));
+        // Debug için log
+        console.log('CORS check - Origin:', origin);
+        console.log('CORS check - Allowed origins:', allowedOrigins);
+        console.log('CORS check - CORS_ORIGIN env:', process.env.CORS_ORIGIN);
+        
+        // Origin yoksa (Postman, curl gibi direkt API çağrıları) izin ver
+        if (!origin) {
+            console.log('CORS: No origin, allowing');
+            return callback(null, true);
         }
+        
+        // İzin verilen listede ise
+        if (allowedOrigins.includes(origin)) {
+            console.log('CORS: Origin allowed');
+            return callback(null, true);
+        }
+        
+        // Eğer origin'in www'siz veya www'li versiyonu listede varsa izin ver
+        const originWithoutWww = origin.replace('www.', '');
+        const originWithWww = origin.startsWith('https://') ? origin.replace('https://', 'https://www.') : origin;
+        
+        if (allowedOrigins.includes(originWithoutWww) || allowedOrigins.includes(originWithWww)) {
+            console.log('CORS: Origin variant allowed');
+            return callback(null, true);
+        }
+        
+        console.log('CORS: Origin denied');
+        callback(new Error('CORS policy violation'));
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 };
 
 // Middleware
@@ -120,7 +144,7 @@ app.get('/api/health', async (req, res) => {
 app.get('/api/test-db', async (req, res) => {
     try {
         const pool = (await import('./config/database.js')).default;
-        // MariaDB uyumlu sorgu - NOW() yerine CURRENT_TIMESTAMP kullan
+        // MariaDB uyumlu sorgu - CURRENT_TIMESTAMP kullan
         const [result] = await pool.execute('SELECT 1 as test, DATABASE() as db_name, USER() as db_user, CURRENT_TIMESTAMP as db_time');
         
         res.json({ 
